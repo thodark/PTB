@@ -226,15 +226,34 @@ document.addEventListener('DOMContentLoaded', function () {
     flash.classList.add('active');
     setTimeout(() => flash.classList.remove('active'), 300);
 
-    const captureWidth = 1200;
-    const captureHeight = 900;
+    // FIX: Nâng độ phân giải và Cắt phần ảnh dư (nếu camera xuất tỉ lệ khác 4:3)
+    const captureWidth = 1920;
+    const captureHeight = 1440;
     captureCanvas.width  = captureWidth;
     captureCanvas.height = captureHeight;
+
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const targetRatio = 4 / 3;
+    let sourceWidth = vw;
+    let sourceHeight = vh;
+    let sourceX = 0;
+    let sourceY = 0;
+
+    // Tính toán Crop chuẩn 4:3 từ tâm khung hình để không bị bẹp hình
+    if (vw / vh > targetRatio) {
+      sourceWidth = vh * targetRatio;
+      sourceX = (vw - sourceWidth) / 2;
+    } else {
+      sourceHeight = vw / targetRatio;
+      sourceY = (vh - sourceHeight) / 2;
+    }
 
     captureCtx.save();
     captureCtx.translate(captureWidth, 0);
     captureCtx.scale(-1, 1);
-    captureCtx.drawImage(video, 0, 0, captureWidth, captureHeight);
+    // DrawImage với crop chuẩn
+    captureCtx.drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, captureWidth, captureHeight);
     captureCtx.restore();
 
     const def = FILTER_DEFS[currentFilterKey];
@@ -322,11 +341,10 @@ document.addEventListener('DOMContentLoaded', function () {
     ctx.drawImage(img, shrink, shrink, 1080 - shrink * 2, 1920 - shrink * 2);
   }
 
-  // FIX: Cập nhật hàm drawRoundedImage để hỗ trợ vẽ khung màu xung quanh ảnh [cite: 8]
+  // FIX: Sửa lỗi bóp mặt và sửa lỗi crop mất đầu khi chèn vào frame
   function drawRoundedImage(ctx, img, x, y, w, h, radius = 20, borderColor = null) {
     if (!img.complete || !img.width) return;
     
-    // Hàm nội bộ tạo path bo góc [cite: 9, 10, 11, 12, 13]
     const createRoundedPath = (c) => {
       c.beginPath();
       c.moveTo(x + radius, y);
@@ -341,33 +359,25 @@ document.addEventListener('DOMContentLoaded', function () {
       c.closePath();
     };
 
-    // 1. Vẽ ảnh (có clip) [cite: 14, 15, 16, 17]
     ctx.save();
     createRoundedPath(ctx);
-    ctx.clip();
+    ctx.clip(); // Giới hạn vùng vẽ ảnh chỉ trong khung bo góc
 
-    const imgRatio = img.width / img.height;
-    const boxRatio = w / h;
-    let drawWidth, drawHeight;
+    // Thuật toán object-fit: cover giữ nguyên tỷ lệ, không gây méo ảnh
+    const scale = Math.max(w / img.width, h / img.height);
+    const drawWidth = img.width * scale;
+    const drawHeight = img.height * scale;
 
-    if (imgRatio > boxRatio) {
-      drawHeight = h;
-      drawWidth = img.width * (h / img.height);
-    } else {
-      drawWidth = w;
-      drawHeight = img.height * (w / img.width);
-    }
-
+    // Căn giữa tuyệt đối để trùng khớp với preview của người dùng
     const offsetX = (w - drawWidth) / 2;
-    const offsetY = (h - drawHeight) / 3;
+    const offsetY = (h - drawHeight) / 2; 
 
     ctx.drawImage(img, x + offsetX, y + offsetY, drawWidth, drawHeight);
     ctx.restore();
 
-    // 2. Vẽ khung viền theo concept (Nằm trên ảnh nhưng dưới frame thật)
     if (borderColor) {
       ctx.save();
-      ctx.lineWidth = 10; // Độ dày khung màu cho nổi bật
+      ctx.lineWidth = 10;
       ctx.strokeStyle = borderColor;
       createRoundedPath(ctx);
       ctx.stroke();
@@ -393,14 +403,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (frameImage) drawFrameBackground(editorCtx, frameImage);
 
-    // Lấy layout và màu khung tương ứng với concept đang chọn
     const activeLayout = FRAME_LAYOUTS[currentConcept] || FRAME_LAYOUTS['default'];
     
-    // FIX: Hệ thống màu khung cho từng concept
     const CONCEPT_COLORS = {
-      'Cute': '#ff7eb3', // Hồng đậm
-      'Film': '#ffffff', // Trắng
-      'Fresh': '#8ec5ff' // Xanh mint
+      'Cute': '#ff7eb3',
+      'Film': '#ffffff',
+      'Fresh': '#8ec5ff'
     };
     const currentBorderColor = CONCEPT_COLORS[currentConcept] || null;
 
@@ -415,7 +423,7 @@ document.addEventListener('DOMContentLoaded', function () {
         activeLayout[slotIdx].w, 
         activeLayout[slotIdx].h, 
         20,
-        currentBorderColor // Truyền màu viền vào đây
+        currentBorderColor
       );
     });
 
@@ -619,7 +627,7 @@ document.addEventListener('DOMContentLoaded', function () {
     activeSticker = null; // Hide handles before export
     renderEditor();
     const a = document.createElement('a');
-    a.href = editorCanvas.toDataURL('image/png', 1.0);
+    a.href = editorCanvas.toDataURL('image/png', 1.0); 
     a.download = `photobooth_${currentConcept || 'custom'}_${Date.now()}.png`;
     a.click();
     showNotification('Đã tải ảnh về máy! 🎉');
