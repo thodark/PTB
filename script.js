@@ -31,6 +31,11 @@ document.addEventListener('DOMContentLoaded', function () {
       { x: 140, y: 220, w: 800, h: 440 },
       { x: 140, y: 700, w: 800, h: 440 },
       { x: 140, y: 1180, w: 800, h: 440 }
+    ],
+    'Custom': [
+      { x: 140, y: 240, w: 800, h: 430 },
+      { x: 140, y: 720, w: 800, h: 430 },
+      { x: 140, y: 1200, w: 800, h: 430 }
     ]
   };
 
@@ -80,8 +85,9 @@ document.addEventListener('DOMContentLoaded', function () {
   let isSessionActive  = false;
   let currentFilterKey = 'none';
   let filterOpacity    = 1.0;
-  let currentConcept   = null;
-  let frameImage       = null;
+  let currentConcept     = null;
+  let frameImage         = null;
+  let customFrameColor   = '#ff7eb3';
   let stickers         = [];
   let activeSticker    = null;
   let dragState        = null;
@@ -117,6 +123,8 @@ document.addEventListener('DOMContentLoaded', function () {
   const stickerGrid       = document.getElementById('stickerGrid');
   const exportBtn         = document.getElementById('exportBtn');
   const backToSelectBtn   = document.getElementById('backToSelectBtn');
+  const uploadStickerBtn  = document.getElementById('uploadStickerBtn');
+  const customStickerInput = document.getElementById('customStickerInput');
   const goToSelectionBtn  = document.getElementById('goToSelectionBtn');
 
   // ── Setup high-DPI editor canvas ─────────────────────────────
@@ -401,7 +409,11 @@ document.addEventListener('DOMContentLoaded', function () {
     editorCtx.fillStyle = '#fff'; 
     editorCtx.fillRect(0, 0, 1080, 1920);
 
-    if (frameImage) drawFrameBackground(editorCtx, frameImage);
+    if (currentConcept === 'Custom') {
+      drawCustomFrameBackground(editorCtx, customFrameColor);
+    } else if (frameImage) {
+      drawFrameBackground(editorCtx, frameImage);
+    }
 
     const activeLayout = FRAME_LAYOUTS[currentConcept] || FRAME_LAYOUTS['default'];
     
@@ -432,6 +444,79 @@ document.addEventListener('DOMContentLoaded', function () {
     const active = stickers.find(s => s.id === activeSticker);
     if (active) drawHandles(active);
   }
+
+  // ── Custom frame: gradient/pattern background drawn with Canvas API ──
+  function drawCustomFrameBackground(ctx, baseColor) {
+    const W = 1080, H = 1920;
+    ctx.fillStyle = '#0d0d1a';
+    ctx.fillRect(0, 0, W, H);
+
+    const bloom = ctx.createRadialGradient(W/2, H*0.38, 0, W/2, H*0.38, W*0.85);
+    bloom.addColorStop(0,   hexAlpha(baseColor, 0.38));
+    bloom.addColorStop(0.5, hexAlpha(baseColor, 0.14));
+    bloom.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = bloom;
+    ctx.fillRect(0, 0, W, H);
+
+    const sweep = ctx.createLinearGradient(0, 0, W, H);
+    sweep.addColorStop(0,    hexAlpha(baseColor, 0.22));
+    sweep.addColorStop(0.45, 'rgba(0,0,0,0)');
+    sweep.addColorStop(0.55, 'rgba(0,0,0,0)');
+    sweep.addColorStop(1,    hexAlpha(baseColor, 0.18));
+    ctx.fillStyle = sweep;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.globalAlpha = 0.07;
+    ctx.fillStyle = baseColor;
+    const spacing = 60, dotR = 3;
+    for (let gx = spacing/2; gx < W; gx += spacing)
+      for (let gy = spacing/2; gy < H; gy += spacing) {
+        ctx.beginPath(); ctx.arc(gx, gy, dotR, 0, Math.PI*2); ctx.fill();
+      }
+    ctx.restore();
+
+    [[0,0],[W,0],[0,H],[W,H]].forEach(([cx,cy]) => {
+      const ag = ctx.createRadialGradient(cx,cy,W*0.08, cx,cy,W*0.42);
+      ag.addColorStop(0, hexAlpha(baseColor, 0.55));
+      ag.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = ag; ctx.fillRect(0, 0, W, H);
+    });
+
+    const slotLayout = FRAME_LAYOUTS['Custom'];
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    const stripeGrad = ctx.createLinearGradient(0, 0, W, 0);
+    stripeGrad.addColorStop(0,   'rgba(0,0,0,0)');
+    stripeGrad.addColorStop(0.5, baseColor);
+    stripeGrad.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = stripeGrad;
+    [slotLayout[0].y-18, slotLayout[1].y-18, slotLayout[2].y-18].forEach(sy => {
+      ctx.fillRect(0, sy, W, 10);
+    });
+    ctx.restore();
+
+    const brand = ctx.createLinearGradient(0, H-110, 0, H);
+    brand.addColorStop(0, 'rgba(0,0,0,0)');
+    brand.addColorStop(1, 'rgba(0,0,0,0.65)');
+    ctx.fillStyle = brand; ctx.fillRect(0, H-110, W, 110);
+
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 36px Poppins, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('✨ PhotoBooth', W/2, H-38);
+    ctx.restore();
+  }
+
+  function hexAlpha(hex, alpha) {
+    const r = parseInt(hex.slice(1,3),16);
+    const g = parseInt(hex.slice(3,5),16);
+    const b = parseInt(hex.slice(5,7),16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
 
   // ── Handles (Tím neon hợp Galaxy) ───────────────────────────
   const HANDLE_SIZE = 14;
@@ -510,8 +595,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const s = stickers.find(st => st.id === dragState.id);
     if (!s) return;
     if (dragState.type === 'move') {
-      s.x = Math.max(0, Math.min(1080 - s.w, dragState.origX + dx));
-      s.y = Math.max(0, Math.min(1920 - s.h, dragState.origY + dy));
+      const newX = dragState.origX + dx;
+      const newY = dragState.origY + dy;
+      // Allow overflow: only clamp so the sticker CENTER stays inside the canvas
+      s.x = Math.max(-(s.w / 2), Math.min(1080 - s.w / 2, newX));
+      s.y = Math.max(-(s.h / 2), Math.min(1920 - s.h / 2, newY));
     } else {
       const { corner, origX, origY, origW, origH, ratio } = dragState;
       let newW = origW;
@@ -522,6 +610,9 @@ document.addEventListener('DOMContentLoaded', function () {
       const newH = newW / ratio;
       if (corner === 'tr' || corner === 'tl') s.y = origY + origH - newH;
       s.w = Math.round(newW); s.h = Math.round(newH);
+      // Clamp after resize so center stays visible
+      s.x = Math.max(-(s.w / 2), Math.min(1080 - s.w / 2, s.x));
+      s.y = Math.max(-(s.h / 2), Math.min(1920 - s.h / 2, s.y));
     }
     renderEditor();
   }
@@ -567,25 +658,62 @@ document.addEventListener('DOMContentLoaded', function () {
     stickerGrid.innerHTML = '';
   }
 
+  const PALETTE_COLORS = [
+    '#ff7eb3','#ff4d9e','#c084fc','#818cf8','#38bdf8',
+    '#34d399','#fbbf24','#f97316','#f43f5e','#e879f9'
+  ];
+
+  function setupCustomPalette() {
+    const palette = document.getElementById('customFramePalette');
+    const swatches = document.getElementById('paletteSwatches');
+    if (!swatches || swatches.children.length > 0) return;
+    PALETTE_COLORS.forEach((color, idx) => {
+      const sw = document.createElement('div');
+      sw.style.cssText = `width:28px;height:28px;border-radius:50%;background:${color};cursor:pointer;border:2px solid transparent;transition:transform .2s,border-color .2s;flex-shrink:0;`;
+      sw.title = color;
+      sw.addEventListener('click', () => {
+        customFrameColor = color;
+        swatches.querySelectorAll('div').forEach(s => { s.style.borderColor='transparent'; s.style.transform='scale(1)'; });
+        sw.style.borderColor = '#fff';
+        sw.style.transform = 'scale(1.25)';
+        renderEditor();
+      });
+      swatches.appendChild(sw);
+    });
+    swatches.firstChild.style.borderColor = '#fff';
+    swatches.firstChild.style.transform = 'scale(1.25)';
+  }
+
   framePickerBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const concept = btn.dataset.concept;
+      const palette = document.getElementById('customFramePalette');
       if (currentConcept === concept) {
         currentConcept = null; frameImage = null;
         btn.classList.remove('active');
         stickerPanel.style.display = 'none';
+        if (palette) palette.style.display = 'none';
         renderEditor();
       } else {
         currentConcept = concept;
         framePickerBtns.forEach(b => b.classList.toggle('active', b.dataset.concept === concept));
-        loadFrame(concept);
-        loadStickerGrid(concept);
+        if (concept === 'Custom') {
+          frameImage = null;
+          if (palette) { palette.style.display = 'flex'; setupCustomPalette(); }
+          stickerPanel.style.display = 'none';
+          renderEditor();
+        } else {
+          if (palette) palette.style.display = 'none';
+          loadFrame(concept);
+          loadStickerGrid(concept);
+        }
       }
     });
   });
 
   function loadFrame(concept) {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => { frameImage = img; renderEditor(); };
     img.onerror = () => { frameImage = null; renderEditor(); };
     img.src = `assets/Frame/${concept}/Frame-${concept}.png`;
@@ -610,8 +738,16 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  function addSticker(src) {
+  function addSticker(src, skipLimit = false) {
+    if (!skipLimit) {
+      const sameType = stickers.filter(st => st.src === src && !st.isCustom);
+      if (sameType.length >= 2) {
+        showNotification('Chỉ được dùng tối đa 2 sticker loại này thôi nhé! 🌸');
+        return;
+      }
+    }
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       const size = Math.round(1080 * 0.2);
       const h = Math.round(size * (img.naturalHeight / img.naturalWidth));
@@ -621,6 +757,73 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     img.src = src;
   }
+
+  // ── Custom sticker upload ─────────────────────────────────────
+  if (uploadStickerBtn && customStickerInput) {
+    uploadStickerBtn.addEventListener('click', () => customStickerInput.click());
+
+    customStickerInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataURL = ev.target.result;
+        const offscreen = document.createElement('canvas');
+        offscreen.width = 256; offscreen.height = 256;
+        const offCtx = offscreen.getContext('2d');
+        const rawImg = new Image();
+        rawImg.onload = () => {
+          const iw = rawImg.naturalWidth || rawImg.width;
+          const ih = rawImg.naturalHeight || rawImg.height;
+          const scale = Math.min(256/iw, 256/ih);
+          const dw = iw*scale, dh = ih*scale;
+          const dx = (256-dw)/2, dy = (256-dh)/2;
+          offCtx.clearRect(0,0,256,256);
+          offCtx.drawImage(rawImg, dx, dy, dw, dh);
+          const normalizedURL = offscreen.toDataURL('image/png');
+          const finalImg = new Image();
+          finalImg.onload = () => {
+            const size = Math.round(1080*0.2);
+            stickers.push({ img: finalImg, src: normalizedURL,
+              x: (1080-size)/2, y: (1920-size)/2,
+              w: size, h: size, rotation: 0,
+              id: Date.now()+Math.random(), isCustom: true });
+            activeSticker = stickers[stickers.length-1].id;
+            addCustomStickerToGrid(normalizedURL);
+            renderEditor();
+            showNotification('Sticker tùy chỉnh đã được thêm! 🎨');
+          };
+          finalImg.src = normalizedURL;
+        };
+        rawImg.src = dataURL;
+      };
+      reader.readAsDataURL(file);
+      customStickerInput.value = '';
+    });
+  }
+
+  function addCustomStickerToGrid(dataURL) {
+    const btn = document.createElement('div');
+    btn.className = 'sticker-btn';
+    const img = document.createElement('img');
+    img.src = dataURL;
+    btn.appendChild(img);
+    btn.addEventListener('click', () => {
+      const finalImg = new Image();
+      finalImg.onload = () => {
+        const size = Math.round(1080*0.2);
+        stickers.push({ img: finalImg, src: dataURL,
+          x: (1080-size)/2, y: (1920-size)/2,
+          w: size, h: size, rotation: 0,
+          id: Date.now()+Math.random(), isCustom: true });
+        activeSticker = stickers[stickers.length-1].id;
+        renderEditor();
+      };
+      finalImg.src = dataURL;
+    });
+    stickerGrid.appendChild(btn);
+  }
+
 
   // ── Export Final ──────────────────────────────────────────────
   exportBtn.addEventListener('click', () => {
